@@ -78,7 +78,7 @@ namespace JenkinsBuilder
         static void PrintError(string message)
         {
             Print(message, EStatus.Error);
-            System.Windows.Forms.Application.Exit();
+            Environment.Exit(-1);
         }
 
         static void StartProcess(string command, string args)
@@ -87,10 +87,17 @@ namespace JenkinsBuilder
             p.StartInfo = new ProcessStartInfo(command)
             {
                 Arguments = $@"{args}",
-                UseShellExecute = false
+                UseShellExecute = false,
+                RedirectStandardError = true
             };
             p.Start();
             p.WaitForExit();
+            int exitCode = p.ExitCode;
+
+            if (exitCode != 0)
+            {
+                Environment.Exit(-1);
+            }
 
             // TODO: If error then exit and print error
         }
