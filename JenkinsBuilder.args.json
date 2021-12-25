@@ -1,0 +1,10 @@
+{
+  "FileVersion": 2,
+  "Id": "6ca4f8b1-39fe-4db0-a078-91dc8d4963cb",
+  "Items": [
+    {
+      "Id": "c8896196-767a-40de-aae7-b520b7116102",
+      "Command": "ActorSpawnerPlugin Publish C:\\"
+    }
+  ]
+}
