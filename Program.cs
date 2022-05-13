@@ -18,8 +18,8 @@ namespace JenkinsBuilder
         public static string UE_BUILD_TOOL = $"{UE_PATH}Engine\\Binaries\\DotNET\\UnrealBuildTool.exe";
         public static string UE_UAT_TOOL = $"{UE_PATH}Engine\\Build\\BatchFiles\\RunUAT.bat";
 
-        public static string UE_PLUGIN_BUILD_COMMAND = "BuildPlugin -Plugin=\"%WORKSPACE%\\%PROJECT_NAME%.uplugin\" -Package=\"%WORKSPACE%\\Packaged\" -Rocket -VS2019 -TargetPlatforms=%TARGET_PLATFORM%";
-        public static string UE_PROJECT_BUILD_COMMAND1 = "-projectfiles -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -game -rocket -progress \"%ENGINE_PATH%%UE_BUILD_TOOL%\" %PROJECT_NAME% %BUILD_CONFIGURATION% %TARGET_PLATFORM% -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -rocket -editorrecompile -progress -noubtmakefiles -NoHotReloadFromIDE -2019";
+        public static string UE_PLUGIN_BUILD_COMMAND = "BuildPlugin -Plugin=\"%WORKSPACE%\\%PROJECT_NAME%.uplugin\" -Package=\"%WORKSPACE%\\Packaged\" -Rocket -VS2022 -TargetPlatforms=%TARGET_PLATFORM%";
+        public static string UE_PROJECT_BUILD_COMMAND1 = "-projectfiles -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -game -rocket -progress \"%ENGINE_PATH%%UE_BUILD_TOOL%\" %PROJECT_NAME% %BUILD_CONFIGURATION% %TARGET_PLATFORM% -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -rocket -editorrecompile -progress -noubtmakefiles -NoHotReloadFromIDE -2022";
         public static string UE_PROJECT_BUILD_COMMAND2 = "BuildCookRun -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -noP4 -platform=%TARGET_PLATFORM% -clientconfig=%BUILD_CONFIGURATION% -cook -numcookerstospawn=8 -compressed -EncryptIniFiles -ForDistribution -allmaps -build -stage -pak -prereqs -package -archive -archivedirectory=\"%WORKSPACE%\\Saved\\Builds\"";
 
         // UE_PLUGIN_BUILD_COMMAND = UE_UAT_TOOL
