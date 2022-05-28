@@ -1,25 +1,24 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
-using System.Windows.Forms;
 using System.IO;
 using System.Diagnostics;
 using Octokit;
 using System.IO.Compression;
+using CommandLine;
 
 namespace JenkinsBuilder
 {
     internal class GlobalConfig
     {
         public static string UE_PATH = "C:\\UnrealEngine\\UE_4.27\\";
-        public static string UE_BUILD_TOOL = $"{UE_PATH}Engine\\Binaries\\DotNET\\UnrealBuildTool.exe";
-        public static string UE_UAT_TOOL = $"{UE_PATH}Engine\\Build\\BatchFiles\\RunUAT.bat";
+        public static string UE_BUILD_TOOL = $"Engine\\Binaries\\DotNET\\UnrealBuildTool.exe";
+        public static string UE_UAT_TOOL = $"Engine\\Build\\BatchFiles\\RunUAT.bat";
+        public static string VS_VERSION = "2019";
 
-        public static string UE_PLUGIN_BUILD_COMMAND = "BuildPlugin -Plugin=\"%WORKSPACE%\\%PROJECT_NAME%.uplugin\" -Package=\"%WORKSPACE%\\Packaged\" -Rocket -VS2022 -TargetPlatforms=%TARGET_PLATFORM%";
-        public static string UE_PROJECT_BUILD_COMMAND1 = "-projectfiles -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -game -rocket -progress \"%ENGINE_PATH%%UE_BUILD_TOOL%\" %PROJECT_NAME% %BUILD_CONFIGURATION% %TARGET_PLATFORM% -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -rocket -editorrecompile -progress -noubtmakefiles -NoHotReloadFromIDE -2022";
+        public static string UE_PLUGIN_BUILD_COMMAND = "BuildPlugin -Plugin=\"%WORKSPACE%\\%PROJECT_NAME%.uplugin\" -Package=\"%WORKSPACE%\\Packaged\" -Rocket -%VS_VERSION% -TargetPlatforms=%TARGET_PLATFORM%";
+        public static string UE_PROJECT_BUILD_COMMAND1 = "-projectfiles -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -game -rocket -progress \"%ENGINE_PATH%%UE_BUILD_TOOL%\" %PROJECT_NAME% %BUILD_CONFIGURATION% %TARGET_PLATFORM% -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -rocket -editorrecompile -progress -noubtmakefiles -NoHotReloadFromIDE -%VS_VERSION_FLAT%";
         public static string UE_PROJECT_BUILD_COMMAND2 = "BuildCookRun -project=\"%WORKSPACE%\\%PROJECT_NAME%.uproject\" -noP4 -platform=%TARGET_PLATFORM% -clientconfig=%BUILD_CONFIGURATION% -cook -numcookerstospawn=8 -compressed -EncryptIniFiles -ForDistribution -allmaps -build -stage -pak -prereqs -package -archive -archivedirectory=\"%WORKSPACE%\\Saved\\Builds\"";
 
         // UE_PLUGIN_BUILD_COMMAND = UE_UAT_TOOL
@@ -29,8 +28,6 @@ namespace JenkinsBuilder
         public static string ConfigFile = $"{System.Windows.Forms.Application.StartupPath}\\JenkinsBuilder.json";
         public static string GitHubTokenFile = $"{System.Windows.Forms.Application.StartupPath}\\GitHubToken.txt";
     }
-
-
 
     internal class Program
     {
@@ -132,18 +129,29 @@ namespace JenkinsBuilder
 
         }
 
-        static string ParseCommand(string str, string ProjectName, string WorkspaceDir, string Platforms)
+        static string ParseCommand(string str, string EnginePath, string ProjectName, string WorkspaceDir, string Platforms, string VSVersion = "")
         {
             string command = str;
-            command = command.Replace("%ENGINE_PATH%", GlobalConfig.UE_PATH);
+            string VisualStudioVersion = string.IsNullOrEmpty(VSVersion) || string.IsNullOrWhiteSpace(VSVersion) ? GlobalConfig.VS_VERSION : VSVersion;
+            command = command.Replace("%VS_VERSION%", $"VS{VisualStudioVersion}"); // -VS2022
+            command = command.Replace("%VS_VERSION_FLAT%", VisualStudioVersion);// -2022
+            command = command.Replace("%ENGINE_PATH%", EnginePath);
             command = command.Replace("%PROJECT_NAME%", ProjectName);
             command = command.Replace("%WORKSPACE%", WorkspaceDir);
             command = command.Replace("%TARGET_PLATFORM%", Platforms);
             return command;
         }
 
-        static async Task Build(dynamic Project, string WorkspaceDir, bool bShouldPublish = false)
+        static async Task Build(dynamic Project, string EnginePath, string WorkspaceDir, string VSVersion = "", bool bShouldPublish = false)
         {
+            string Path = string.IsNullOrEmpty(EnginePath) || string.IsNullOrWhiteSpace(EnginePath) ? GlobalConfig.UE_PATH : EnginePath;
+
+            if (!Directory.Exists(Path))
+            {
+                PrintError($"The path {Path} doesn't exist");
+                return;
+            }
+
             Print("Building is starting.");
 
             bool bIsUEProject = false;
@@ -189,21 +197,21 @@ namespace JenkinsBuilder
 
                 if (bIsUEPlugin)
                 {
-                    string cmd = ParseCommand(GlobalConfig.UE_PLUGIN_BUILD_COMMAND, ProjectName, WorkspaceDir, Platforms);
+                    string cmd = ParseCommand(GlobalConfig.UE_PLUGIN_BUILD_COMMAND, Path, ProjectName, WorkspaceDir, Platforms, VSVersion);
                     Print($"Running command {cmd}");
-                    StartProcess(GlobalConfig.UE_UAT_TOOL, cmd);
+                    StartProcess($"{Path}{GlobalConfig.UE_UAT_TOOL}", cmd);
                 }
                 else
                 {
-                    string cmd = ParseCommand(GlobalConfig.UE_PROJECT_BUILD_COMMAND1, ProjectName, WorkspaceDir, Platforms);
+                    string cmd = ParseCommand(GlobalConfig.UE_PROJECT_BUILD_COMMAND1, Path, ProjectName, WorkspaceDir, Platforms, VSVersion);
                     Print($"Running command {cmd}");
-                    StartProcess(GlobalConfig.UE_BUILD_TOOL, cmd);
+                    StartProcess($"{Path}{GlobalConfig.UE_BUILD_TOOL}", cmd);
 
                     CheckUEProcesses();
 
-                    cmd = ParseCommand(GlobalConfig.UE_PROJECT_BUILD_COMMAND2, ProjectName, WorkspaceDir, Platforms);
+                    cmd = ParseCommand(GlobalConfig.UE_PROJECT_BUILD_COMMAND2, Path, ProjectName, WorkspaceDir, Platforms, VSVersion);
                     Print($"Running command {cmd}");
-                    StartProcess(GlobalConfig.UE_UAT_TOOL, cmd);
+                    StartProcess($"{Path}{GlobalConfig.UE_UAT_TOOL}", cmd);
                 }
             }
 
@@ -216,6 +224,14 @@ namespace JenkinsBuilder
         static async Task Publish(dynamic Project, string WorkspaceDir, string BuildConfiguration = "Release")
         {
             Print("Publishing this build.");
+
+            if (!File.Exists(GlobalConfig.GitHubTokenFile))
+            {
+                PrintError("The GitHubToken.txt file doesn't exist.");
+                return;
+            }
+
+            GitHubToken = File.ReadAllText(GlobalConfig.GitHubTokenFile);
 
             var client = new GitHubClient(new ProductHeaderValue("JenkinsBuilder"));
             var tokenAuth = new Credentials(GitHubToken);
@@ -311,6 +327,30 @@ namespace JenkinsBuilder
             }
         }
 
+        internal class Options
+        {
+            [Option('p', "projectname", Required = true, HelpText = "The ProjectName as defined in the JenkinsBuilder.json config.")]
+            public string ProjectName { get; set; }
+
+            [Option('c', "command", Required = true, HelpText = "Command. Can be either Build, BuildPublish, or Publish")]
+            public ECommand Command { get; set; }
+
+            [Option('w', "workspace", Required = true, HelpText = "The path for the Project workspace.")]
+            public string Workspace { get; set; }
+
+            [Option('e', "enginepath", Required = false, HelpText = "The path for the Unreal Engine.")]
+            public string EnginePath { get; set; }
+
+            [Option('v', "vsversion", Required = false, HelpText = "The Visual Studio version. Can be 2022, 2019, 2017.")]
+            public string VSVersion { get; set; }
+        }
+
+        internal enum ECommand
+        {
+            Build,
+            BuildPublish,
+            Publish
+        }
         static async Task Main(string[] args)
         {
             JavaScriptSerializer serializer = new JavaScriptSerializer();
@@ -330,59 +370,37 @@ namespace JenkinsBuilder
                 return;
             }
 
-            if (args.Length < 3)
+            // Parse command args
+            await Parser.Default.ParseArguments<Options>(args).WithParsedAsync<Options>(async o =>
             {
-                PrintError("You don't have enough arguments to run this command. Expecting JenkinsBuilder.exe <project> <command|Build,BuildPublish,Publish> <workspace>");
-                return;
-            }
+                dynamic SelectedProject = null;
 
-            if (!File.Exists(GlobalConfig.GitHubTokenFile))
-            {
-                PrintError("The GitHubToken.txt file doesn't exist.");
-                return;
-            }
-
-            GitHubToken = File.ReadAllText(GlobalConfig.GitHubTokenFile);
-
-            string ProjectName = args[0];
-            string Command = args[1];
-            string Workspace = args[2];
-
-            if (!Directory.Exists(Workspace))
-            {
-                PrintError("The specified workspace doesn't exist!");
-                return;
-            }
-
-            dynamic SelectedProject = null;
-
-            // iterate over the config
-            foreach (dynamic item in array)
-            {
-                string project = item.Key.ToString();
-
-                if (project != ProjectName)
+                // iterate over the config
+                foreach (dynamic item in array)
                 {
-                    continue;
+                    string project = item.Key.ToString();
+
+                    if (project != o.ProjectName)
+                    {
+                        continue;
+                    }
+
+                    SelectedProject = item;
                 }
 
-                SelectedProject = item;
-            }
-
-            if (Command == "Build")
-            {
-                await Build(SelectedProject, Workspace);
-            }
-
-            if (Command == "BuildPublish")
-            {
-                await Build(SelectedProject, Workspace, true);
-            }
-
-            if (Command == "Publish")
-            {
-                await Publish(SelectedProject, Workspace);
-            }
+                switch (o.Command)
+                {
+                    case ECommand.Build:
+                        await Build(SelectedProject, o.EnginePath, o.Workspace, o.VSVersion);
+                        break;
+                    case ECommand.BuildPublish:
+                        await Build(SelectedProject, o.EnginePath, o.Workspace, o.VSVersion, true);
+                        break;
+                    case ECommand.Publish:
+                        await Publish(SelectedProject, o.Workspace);
+                        break;
+                }
+            });
         }
     }
 }
